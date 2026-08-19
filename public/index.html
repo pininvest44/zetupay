@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk STK Push</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 20px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; font-weight: bold; margin-bottom: 5px; }
+    input, textarea, button { width: 100%; padding: 10px; box-sizing: border-box; }
+    button { background-color: #28a745; color: white; border: none; font-size: 16px; cursor: pointer; }
+    button:disabled { background-color: #ccc; }
+    #logs { margin-top: 20px; background: #1e1e1e; color: #00ff00; padding: 15px; height: 300px; overflow-y: scroll; font-family: monospace; border-radius: 4px; }
+    .log-success { color: #00ff00; }
+    .log-fail { color: #ff4d4d; }
+  </style>
+</head>
+<body>
+  <h2>Bulk STK Push Dispatcher</h2>
+  <form id="stkForm">
+    <div class="form-group">
+      <label>Phone Numbers (One per line or comma-separated):</label>
+      <textarea id="phoneNumbers" rows="6" placeholder="0712345678&#10;0723456789" required></textarea>
+    </div>
+    <div class="form-group">
+      <label>Amount (KES):</label>
+      <input type="number" id="amount" value="1500" required />
+    </div>
+    <div class="form-group">
+      <label>Base Reference:</label>
+      <input type="text" id="reference" value="ORDER-9874" required />
+    </div>
+    <button type="submit" id="submitBtn">Start Bulk STK Push</button>
+  </form>
+
+  <h3>Execution Logs</h3>
+  <div id="logs">Ready to send...</div>
+
+  <script>
+    document.getElementById('stkForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const logContainer = document.getElementById('logs');
+      btn.disabled = true;
+      logContainer.innerHTML = 'Starting queue (30 requests/min throttle active)...\n';
+
+      const rawNumbers = document.getElementById('phoneNumbers').value;
+      const phoneNumbers = rawNumbers.split(/[\n,]+/).map(n => n.trim()).filter(Boolean);
+      const amount = document.getElementById('amount').value;
+      const reference = document.getElementById('reference').value;
+
+      const response = await fetch('/api/bulk-stk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumbers, amount, reference })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n\n');
+
+        lines.forEach(line => {
+          if (line.startsWith('data: ')) {
+            const log = JSON.parse(line.replace('data: ', ''));
+            if (log.status === 'SUCCESS') {
+              logContainer.innerHTML += `<div class="log-success">[SUCCESS] ${log.phone} | Ref: ${log.reference} | Code: ${log.statusCode}</div>`;
+            } else if (log.status === 'FAILURE') {
+              logContainer.innerHTML += `<div class="log-fail">[FAILED] ${log.phone} | Ref: ${log.reference} | Error: ${JSON.stringify(log.error)}</div>`;
+            } else if (log.status === 'COMPLETE') {
+              logContainer.innerHTML += '<div>--- All Requests Processed ---</div>';
+              btn.disabled = false;
+            }
+            logContainer.scrollTop = logContainer.scrollHeight;
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>

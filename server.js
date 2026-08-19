@@ -12,6 +12,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 const API_KEY = process.env.ZETUPAY_SECRET_KEY;
 const API_URL = 'https://pay.zetupay.co.ke/api/v1/payment/initiate';
 
+// Helper function to format phone numbers to standard Kenyan international format (254XXXXXXXXX)
+const formatPhoneNumber = (phone) => {
+  let cleaned = phone.replace(/\D/g, ''); // Remove non-numeric characters
+  if (cleaned.startsWith('0')) {
+    cleaned = '254' + cleaned.slice(1);
+  } else if (cleaned.startsWith('7') || cleaned.startsWith('1')) {
+    cleaned = '254' + cleaned;
+  } else if (cleaned.startsWith('+254')) {
+    cleaned = cleaned.replace('+', '');
+  }
+  return cleaned;
+};
+
 app.post('/api/bulk-stk', async (req, res) => {
   const { phoneNumbers, amount, reference, redirectUrl } = req.body;
 
@@ -19,7 +32,7 @@ app.post('/api/bulk-stk', async (req, res) => {
     return res.status(400).json({ error: 'At least one phone number is required.' });
   }
 
-  // Set SSE headers for real-time log streaming
+  // Set SSE headers for real-time streaming logs
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -31,12 +44,25 @@ app.post('/api/bulk-stk', async (req, res) => {
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   for (let i = 0; i < phoneNumbers.length; i++) {
-    const phone = phoneNumbers[i].trim();
-    if (!phone) continue;
+    const rawPhone = phoneNumbers[i].trim();
+    if (!rawPhone) continue;
+
+    const formattedPhone = formatPhoneNumber(rawPhone);
+
+    // Validate phone number length (254 + 9 digits = 12 digits)
+    if (formattedPhone.length !== 12 || !formattedPhone.startsWith('254')) {
+      sendLog({
+        status: 'FAILURE',
+        phone: rawPhone,
+        reference: `${reference}-${i + 1}`,
+        error: `Invalid phone number format: ${rawPhone}`
+      });
+      continue;
+    }
 
     const payload = {
       amount: Number(amount),
-      phoneNumber: phone,
+      phoneNumber: formattedPhone,
       reference: `${reference}-${i + 1}`,
       redirectUrl: redirectUrl || 'https://my-app.com/success'
     };
@@ -51,7 +77,7 @@ app.post('/api/bulk-stk', async (req, res) => {
 
       sendLog({
         status: 'SUCCESS',
-        phone,
+        phone: formattedPhone,
         reference: payload.reference,
         statusCode: response.status,
         data: response.data
@@ -59,7 +85,7 @@ app.post('/api/bulk-stk', async (req, res) => {
     } catch (error) {
       sendLog({
         status: 'FAILURE',
-        phone,
+        phone: formattedPhone,
         reference: payload.reference,
         statusCode: error.response ? error.response.status : 500,
         error: error.response ? error.response.data : error.message

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: bulk-stk-push
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ZETUPAY_SECRET_KEY
+        sync: false

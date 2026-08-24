@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Rate Limiting: 5 requests per minute overall to prevent API spam
+// Rate limit: 5 requests per minute
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
@@ -36,19 +36,43 @@ app.post('/api/stk-push', async (req, res) => {
     const phone = phoneNumbers[i].trim();
     if (!phone) continue;
 
-    const payload = {
+    const initiatePayload = {
       amount: Number(amount),
       phoneNumber: phone,
-      reference: `${reference || 'BULK'}-${Date.now()}-${i + 1}`,
+      reference: `${reference || 'ORDER'}-${Date.now()}-${i + 1}`,
       redirectUrl: process.env.REDIRECT_URL || 'https://my-app.com/success',
       currency: 'KES',
       identifier: `cust_${Math.floor(10000 + Math.random() * 90000)}`
     };
 
     try {
-      const response = await axios.post(
+      // Step 1: Initiate session to generate paymentKey
+      const initResponse = await axios.post(
         'https://pay.zetupay.co.ke/api/v1/payment/initiate',
-        payload,
+        initiatePayload,
+        {
+          headers: {
+            'Authorization': `Bearer ${secretKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        }
+      );
+
+      const paymentKey = initResponse.data?.data?.paymentKey;
+
+      if (!paymentKey) {
+        throw new Error('Failed to retrieve paymentKey from session initialization.');
+      }
+
+      // Step 2: Fire STK Push execution directly to the phone number using paymentKey
+      const payResponse = await axios.post(
+        'https://pay.zetupay.co.ke/api/v1/payment/pay',
+        {
+          paymentKey: paymentKey,
+          phoneNumber: phone,
+          paymentMethod: 'MPESA'
+        },
         {
           headers: {
             'Authorization': `Bearer ${secretKey}`,
@@ -61,9 +85,11 @@ app.post('/api/stk-push', async (req, res) => {
       results.push({
         phone,
         status: 'SUCCESS',
-        statusCode: response.status,
-        data: response.data
+        statusCode: payResponse.status,
+        paymentKey: paymentKey,
+        data: payResponse.data
       });
+
     } catch (err) {
       results.push({
         phone,
@@ -73,13 +99,13 @@ app.post('/api/stk-push', async (req, res) => {
       });
     }
 
-    // Delay between processing to avoid overwhelming API limits
+    // 1-second delay between batch requests
     if (i < phoneNumbers.length - 1) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
-  res.json({ message: 'Batch processing finished', results });
+  res.json({ message: 'Batch processing complete', results });
 });
 
 app.listen(PORT, () => {

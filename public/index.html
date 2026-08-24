@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bulk STK Push</title>
+  <title>Automated Bulk STK Push</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 700px; margin: 30px auto; padding: 20px; }
     .form-group { margin-bottom: 15px; }
@@ -11,31 +11,32 @@
     input, textarea, button { width: 100%; padding: 10px; box-sizing: border-box; }
     button { background: #28a745; color: #fff; border: none; font-size: 16px; cursor: pointer; margin-top: 10px; }
     button:disabled { background: #888; }
-    #logs { margin-top: 20px; background: #f4f4f4; padding: 15px; border-radius: 5px; font-family: monospace; max-height: 300px; overflow-y: auto; }
-    .success { color: green; }
-    .failed { color: red; }
+    #logs { margin-top: 20px; background: #1e1e1e; color: #fff; padding: 15px; border-radius: 5px; font-family: monospace; max-height: 350px; overflow-y: auto; }
+    .log-entry { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+    .success { color: #2ecc71; }
+    .failed { color: #e74c3c; }
   </style>
 </head>
 <body>
-  <h2>Bulk STK Push Dispatcher</h2>
+  <h2>Automated Bulk STK Push Dispatcher</h2>
   <form id="stkForm">
     <div class="form-group">
-      <label for="phones">Phone Numbers (One per line or comma-separated):</label>
+      <label for="phones">Phone Numbers (07... or 254...):</label>
       <textarea id="phones" rows="5" placeholder="0712345678&#10;0787654321" required></textarea>
     </div>
     <div class="form-group">
       <label for="amount">Amount (KES):</label>
-      <input type="number" id="amount" placeholder="1500" required>
+      <input type="number" id="amount" placeholder="10" required>
     </div>
     <div class="form-group">
       <label for="reference">Reference Base:</label>
-      <input type="text" id="reference" placeholder="ORDER-9874" required>
+      <input type="text" id="reference" placeholder="ORDER-1001" required>
     </div>
-    <button type="submit" id="submitBtn">Send STK Pushes</button>
+    <button type="submit" id="submitBtn">Fire STK Prompts</button>
   </form>
 
-  <h3>Execution Logs</h3>
-  <div id="logs">Ready...</div>
+  <h3>Live Dispatch Status</h3>
+  <div id="logs">System ready...</div>
 
   <script>
     document.getElementById('stkForm').addEventListener('submit', async (e) => {
@@ -49,7 +50,7 @@
       const reference = document.getElementById('reference').value;
 
       submitBtn.disabled = true;
-      logs.innerHTML = '<div>Processing requests...</div>';
+      logs.innerHTML = '<div>Initiating batch triggers...</div>';
 
       try {
         const res = await fetch('/api/stk-push', {
@@ -67,13 +68,18 @@
           data.results.forEach(item => {
             const statusClass = item.status === 'SUCCESS' ? 'success' : 'failed';
             const logItem = document.createElement('div');
-            logItem.className = statusClass;
-            logItem.innerText = `[${item.status}] Phone: ${item.phone} | Details: ${JSON.stringify(item.data || item.error)}`;
+            logItem.className = `log-entry ${statusClass}`;
+            
+            if (item.status === 'SUCCESS') {
+              logItem.innerText = `[STK SENT] Phone: ${item.phone} | Key: ${item.paymentKey} | Msg: ${item.data?.message || 'Prompt dispatched'}`;
+            } else {
+              logItem.innerText = `[FAILED] Phone: ${item.phone} | Details: ${JSON.stringify(item.error)}`;
+            }
             logs.appendChild(logItem);
           });
         }
       } catch (err) {
-        logs.innerHTML = `<div class="failed">Network or Client Error: ${err.message}</div>`;
+        logs.innerHTML = `<div class="failed">Client Error: ${err.message}</div>`;
       } finally {
         submitBtn.disabled = false;
       }

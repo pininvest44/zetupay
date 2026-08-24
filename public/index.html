@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk STK Push</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 30px auto; padding: 20px; }
+    .form-group { margin-bottom: 15px; }
+    label { font-weight: bold; display: block; margin-bottom: 5px; }
+    input, textarea, button { width: 100%; padding: 10px; box-sizing: border-box; }
+    button { background: #28a745; color: #fff; border: none; font-size: 16px; cursor: pointer; margin-top: 10px; }
+    button:disabled { background: #888; }
+    #logs { margin-top: 20px; background: #f4f4f4; padding: 15px; border-radius: 5px; font-family: monospace; max-height: 300px; overflow-y: auto; }
+    .success { color: green; }
+    .failed { color: red; }
+  </style>
+</head>
+<body>
+  <h2>Bulk STK Push Dispatcher</h2>
+  <form id="stkForm">
+    <div class="form-group">
+      <label for="phones">Phone Numbers (One per line or comma-separated):</label>
+      <textarea id="phones" rows="5" placeholder="0712345678&#10;0787654321" required></textarea>
+    </div>
+    <div class="form-group">
+      <label for="amount">Amount (KES):</label>
+      <input type="number" id="amount" placeholder="1500" required>
+    </div>
+    <div class="form-group">
+      <label for="reference">Reference Base:</label>
+      <input type="text" id="reference" placeholder="ORDER-9874" required>
+    </div>
+    <button type="submit" id="submitBtn">Send STK Pushes</button>
+  </form>
+
+  <h3>Execution Logs</h3>
+  <div id="logs">Ready...</div>
+
+  <script>
+    document.getElementById('stkForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submitBtn');
+      const logs = document.getElementById('logs');
+
+      const rawPhones = document.getElementById('phones').value;
+      const phoneNumbers = rawPhones.split(/[\n,]/).map(p => p.trim()).filter(p => p.length > 0);
+      const amount = document.getElementById('amount').value;
+      const reference = document.getElementById('reference').value;
+
+      submitBtn.disabled = true;
+      logs.innerHTML = '<div>Processing requests...</div>';
+
+      try {
+        const res = await fetch('/api/stk-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneNumbers, amount, reference })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          logs.innerHTML = `<div class="failed">Error: ${data.message || data.error}</div>`;
+        } else {
+          logs.innerHTML = '';
+          data.results.forEach(item => {
+            const statusClass = item.status === 'SUCCESS' ? 'success' : 'failed';
+            const logItem = document.createElement('div');
+            logItem.className = statusClass;
+            logItem.innerText = `[${item.status}] Phone: ${item.phone} | Details: ${JSON.stringify(item.data || item.error)}`;
+            logs.appendChild(logItem);
+          });
+        }
+      } catch (err) {
+        logs.innerHTML = `<div class="failed">Network or Client Error: ${err.message}</div>`;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

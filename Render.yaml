@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: bulk-stk-push-app
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ZETUPAY_SECRET_KEY
+        sync: false
+      - key: REDIRECT_URL
+        value: https://my-app.com/success
